@@ -1,13 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-L = 10
-N = 10
+Lx = 8
+Ly = 1
+L = Lx*Ly
+#N = 8
 #S = 6
 dt = np.dtype(np.complex128)
 
 t = -1.
 U = 4.
+
+class BoundaryCondition:
+      OBC, PBC = range(2)
 
 
 class c_terms(object):
@@ -160,14 +165,41 @@ def fermion_sign(lst,state):
                 sign *= -1
     return sign
     
+def fermion_sign_cdc(lst,state):
+    lstnew = [lst[0],-lst[1]]
+    lstnew.sort(reverse=True)  #descenting order
+    #print("new list: ",lstnew)
+    indexnew = [indexinlist(lst,lstnew[0]),indexinlist(lst,lstnew[1])]
+    #print(indexnew)
+    sign=1.0
+    for i in range(2):
+        sign *= (-1)**(indexinlist(indexnew,i)-i)
+        indexnew = swapPositions(indexnew,indexinlist(indexnew,i),i)
+        #print("i: ",i, sign, indexnew)
+    lstn = [lstnew[xi]-1 for xi in range(2)]
+    for ii in range(2*L):
+        if(IBITS(state,2*L-ii)): lstn.append(2*L-ii)
+        #print(lstn)
+    for i in ([1,0]):
+        for j in range(2,len(lstn)):
+            if(lstn[i]< lstn[j]): 
+                sign *= -1               
+    return sign
 
 def hami(state_in, term): # H operator act on state_in, term =c_term([],coef)
     x=0.
-    if(len(term.lst) == 2):#ck+ck term
-        # diagonal term
-        state_out = state_in
-        site_k = term.lst[0]-1
-        x = term.coef*IBITS(state_in, site_k)
+    if(len(term.lst) == 2):
+        # diagonal term #ck+ck term or nk term
+        [s1,s2] = term.lst
+        if(s1==-s2):
+            state_out = state_in
+            site_k = term.lst[0]-1
+            x = term.coef*IBITS(state_in, site_k)
+        #off-diag cdicj term
+        else:
+            mask1 = (1 << (-s2-1)) | (1 << (s1-1))  # 1 on site i and 1 on site j
+            state_out = (state_in ^ mask1)  # flip the two 
+            x = (1-IBITS(state_in, s1-1))*(IBITS(state_in, -s2-1))*term.coef*fermion_sign_cdc(term.lst,state_in)
         
     elif(len(term.lst) == 4):
         # off-diagonal term
@@ -181,8 +213,9 @@ def hami(state_in, term): # H operator act on state_in, term =c_term([],coef)
             state_outi = (state_in ^ mask1)  # flip the two 
             state_out = state_outi ^ mask2
             x = (1-IBITS(state_in, s1-1))*(IBITS(state_in, -s2-1))*(1-IBITS(state_in, s3-1))*(IBITS(state_in, -s4-1))*term.coef*fermion_sign(term.lst,state_in)
-            
+            #print(state_in, [s1,s2,s3,s4],(1-IBITS(state_in, s1-1)),(IBITS(state_in, -s2-1)),(1-IBITS(state_in, s3-1)),(IBITS(state_in, -s4-1)) , fermion_sign(term.lst,state_in))
     return state_out,x
+ 
  
 
 def hami_mtx(basis,L,all_term_list):
@@ -191,15 +224,23 @@ def hami_mtx(basis,L,all_term_list):
     print("lenth of basis: ", basislen)
     termlen = len(all_term_list)
     for term in all_term_list: 
+        print(term.lst,term.coef)
         for i in range(basislen):
             state_out,x0 = hami(basis[i], term)
             if(state_out in basis):
-                #print(state_out,indexinlist(basis,state_out))
                 out_idx = indexinlist(basis,state_out)
-                hmatrix[i,out_idx] += x0
-    values,vectors = np.linalg.eigh(hmatrix)
-    #print(hmatrix)
-    return values
+                if(out_idx>=i):
+                    hmatrix[i,out_idx] += x0
+                    #if(x0!=0 and len(term.lst)==2):print(term.lst,bin(basis[i]),fermion_sign_cdc(term.lst,basis[i]))#basis[i],term.lst,state_out,x0)
+                    hmatrix[out_idx,i] = np.conjugate(hmatrix[i,out_idx])
+    #values,vectors = np.linalg.eigh(hmatrix)
+    #print("hszsz:   ")
+    #for i in range(basislen):
+    #    for j in range(basislen):
+    #        if(hmatrix[i,j]*np.conjugate(hmatrix[i,j]) > 0.00001):
+    #            print(i,j,hmatrix[i,j])
+    return hmatrix#values,np.transpose(vectors)[0]
+
 
 
 def hami_mtx_block(k_total,L,all_term_list,basis_set): #k_total=0,1,2,...L-1
@@ -310,14 +351,12 @@ def hami_mtx_k(k,L,Nup,Ndn,t,U):#wrong, don't use
     return values
 
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
     #print("check fermion sign: ", fermion_sign([1, -3, 2, -12],228))#fermion_sign([3, -7, 2, -6]))
     #print("k= 0, ",hami_mtx_k(0,L,Nup,Ndn,t,U))
     #print("k= 1, ",hami_mtx_k(1,L,Nup,Ndn,t,U))
     #print("k= 2, ",hami_mtx_k(2,L,Nup,Ndn,t,U))
     #print("k= 3, ",hami_mtx_k(3,L,Nup,Ndn,t,U))
-
-
 
 
 
