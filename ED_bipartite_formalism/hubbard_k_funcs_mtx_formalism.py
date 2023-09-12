@@ -19,6 +19,83 @@ xBC = BoundaryCondition.OBC
 #yBC = BoundaryCondition.PBC
 
 
+hflip = np.zeros(4)  # off-diagonal terms
+
+hflip[0] = 0.
+hflip[1] = t
+hflip[2] = t
+hflip[3] = 0.
+
+def find_rep(state,basis):
+    idx = -1
+    for i in range(len(basis)):
+        if(state == basis[i]):
+            idx= i
+        else:
+            continue
+    return(idx)
+
+def spinless_r_space(basis):
+    dim = len(basis)
+    H = np.zeros(shape=(dim, dim))
+    for i in range(dim):
+        state = basis[i]
+        print(bin(state))
+        for site_i in range(L-1):
+            site_j = (site_i + 1 + L) % L
+       
+            # Off-diagonal term
+            mask = (1 << site_i) | (1 << site_j)
+            two_sites = IBITS(state, site_i) | (IBITS(state, site_j) << 1)
+            #print(bin(state),site_i,site_j,two_sites)
+            fermion_num = 0
+            for num_i in range(site_i+1,L):
+                if(IBITS(state,num_i)==1):fermion_num+=1
+            for num_i in range(site_j+1,L):
+                if(IBITS(state,num_i)==1):fermion_num+=1
+            if(site_i>site_j and IBITS(state,site_i)==1 and IBITS(state,site_j)==0):fermion_num+=1#i<j CdjCi
+            if(site_i<site_j and IBITS(state,site_i)==0 and IBITS(state,site_j)==1):fermion_num+=1 #i<j CdjCi
+            value = hflip[two_sites]
+            if (value != 0.):
+                new_state = (state ^ mask)
+                j = find_rep(new_state, basis)
+                H[i, j] += value * ((-1)**fermion_num)       
+    print("Aup: ")
+    print(H)
+    #d, v = np.linalg.eigh(H)  # Diagonalize the matrix           
+    return H#d,v
+
+
+
+
+
+class BipartiteSystem(object): 
+
+    def __init__(self, _nsites,basisUp,dt,U):
+        # the bipartite here is based on SPIN, not position!
+        self.dt = dt
+        self.nsites = _nsites
+        self.dim_basis = len(basisUp) #assume Nup=Ndn
+        self.u0 = np.zeros(shape=(self.dim_basis,self.dim_basis),dtype=self.dt) # 
+        self.Aup = spinless_r_space(basisUp)
+        #print("Spinless results: ",np.linalg.eigh(self.Aup))
+        self.Adn = np.copy(self.Aup)
+        for i in range(self.dim_basis):
+            for j in range(self.dim_basis):
+                for n in range(self.nsites):
+                    self.u0[i,j] += U * IBITS(basisUp[i],n) * IBITS(basisUp[j],n)
+        #print("D: ", self.u0)
+        self.psi = np.zeros(shape=(self.dim_basis,self.dim_basis),dtype=self.dt) # g.s. wave function
+    def product(self,psi): #dot product bwtween H and psi vector
+        npsi = np.zeros(shape=(self.dim_basis,self.dim_basis))
+        for i in range(len(psi)):
+            for j in range(len(psi[0])):
+                npsi[i][j] = self.u0[i][j] * psi[i][j]
+                for k in range(len(psi)):
+                    npsi[i][j] += self.Aup[i][k] * psi[k][j]
+                    npsi[i][j] += self.Adn[j][k] * psi[i][k]
+        return npsi
+
 
 def psi_dot_psi(psi1, psi2): #<psi1|psi2>
     x = 0.
@@ -107,8 +184,7 @@ def lanczos_customize(m, seed, maxiter, tol, use_seed = False, force_maxiter = F
         
        
         print ("Iter = ",iter," Ener = ",e0) #check the convergence of the gs
-        if((force_maxiter and iter >= control_max) or (iter >= gs.shape[0]*gs.shape[1] or iter == 99 or abs(b[iter]) < tol) or \
-            ((not force_maxiter) and abs(eini-e0) <= tol)):
+        if((force_maxiter and iter >= control_max) or (iter >= gs.shape[0]*gs.shape[1] or iter == 99 or abs(b[iter]) < tol) or ((not force_maxiter) and abs(eini-e0) <= tol)):
             # converged
             gs[:,:] = 0.
             for n in range(0,iter):
@@ -121,32 +197,6 @@ def lanczos_customize(m, seed, maxiter, tol, use_seed = False, force_maxiter = F
     return(e0,gs)
 
 
-
-class c_terms(object):
-    def __init__(self, lst=[], coef=1.0):
-        self.lst = lst
-        self.coef = coef
-
-    def __mul__(self, other): #self*other
-        if(type(other)==c_terms):
-            new_lst = []
-            for i in range(len(self.lst)):
-                new_lst.append(self.lst[i])
-            for i in range(len(other.lst)):
-                new_lst.append(other.lst[i])
-            return c_terms(new_lst,self.coef*other.coef)
-        elif(type(other)==float):
-            return c_terms(self.lst, self.coef * other)
-    def __rmul__(self, other): #other*self
-        if(type(other)==c_terms):
-            new_lst = []
-            for i in range(len(other.lst)):
-                new_lst.append(other.lst[i])
-            for i in range(len(self.lst)):
-                new_lst.append(self.lst[i])
-            return c_terms(new_lst,self.coef*other.coef)
-        elif (type(other) == float):
-            return c_terms(self.lst, self.coef * other)
 
 
 def IBITS(n,i): #count from right site from 0.
@@ -170,98 +220,6 @@ def build_all_basis(param_L, Nup): # Using quantum number m to build bases
             dim += 1
     print("dim: ",dim)
     return dim,basis
-
-
-def spintrans(state,L,bit): #translate the left #n bit to the right
-    b = state >> L-bit
-    lastbit=0
-    for i in range(bit-1):
-        lastbit += 2**i
-    state = state << bit
-    state = state & (2**L-1)
-    state = state | b
-    return state
-
-
-def build_all_trans(state,L):
-    all_state = []
-    for l in range(L):
-        all_state.append(spintrans(state,L,l))
-    return all_state
-
-def transin(state, basis, L):
-    ntrans = 1
-    for bit in range(L):
-        s = 0
-        statenew = spintrans(state, 2*L, 2*(bit+1))
-        if (statenew in basis):
-            s = 1
-            break
-        ntrans += 1
-    return (s, ntrans)
-
-def indexinlist(List,num):
-    for x in range(len(List)):
-        if(List[x]==num or List[x]==-num):
-            return x
-
-def swapPositions(list, r, l): #move pos1(r) element to l(pos2)
-    new_list = []
-    for i in range (0,l):
-        new_list.append(list[i])
-    new_list.append(list[r])
-    for i in range(l,r):
-        new_list.append(list[i])
-    for i in range(r+1,len(list)):
-        new_list.append(list[i])
-    return new_list
-
-
-def fermion_sign(lst,state):
-    lstnew = [lst[0],-lst[1],lst[2],-lst[3]]
-    lstnew.sort(reverse=True)  #descenting order
-    #print("new list: ",lstnew)
-    indexnew = [indexinlist(lst,lstnew[0]),indexinlist(lst,lstnew[1]),indexinlist(lst,lstnew[2]),indexinlist(lst,lstnew[3])]
-    #print(indexnew)
-    sign=1.0
-    for i in range(3):
-        sign *= (-1)**(indexinlist(indexnew,i)-i)
-        indexnew = swapPositions(indexnew,indexinlist(indexnew,i),i)
-        #print("i: ",i, sign, indexnew)
-    lstn = [lstnew[xi]-1 for xi in range(4)]
-    for ii in range(2*L):
-        if(IBITS(state,2*L-ii)): lstn.append(2*L-ii)
-        #print(lstn)
-    for i in ([3,2,1,0]):
-        for j in range(4,len(lstn)):
-            if(lstn[i]< lstn[j]): 
-                sign *= -1
-    return sign
-    
-def fermion_sign_cdc(lst,state):
-    lstnew = [lst[0],-lst[1]]
-    lstnew.sort(reverse=True)  #descenting order
-    #print("new list: ",lstnew)
-    indexnew = [indexinlist(lst,lstnew[0]),indexinlist(lst,lstnew[1])]
-    #print(indexnew)
-    sign=1.0
-    for i in range(2):
-        sign *= (-1)**(indexinlist(indexnew,i)-i)
-        indexnew = swapPositions(indexnew,indexinlist(indexnew,i),i)
-        #print("i: ",i, sign, indexnew)
-    lstn = [lstnew[xi]-1 for xi in range(2)]
-    for ii in range(2*L):
-        if(IBITS(state,2*L-ii)): lstn.append(2*L-ii)
-        #print(lstn)
-    for i in ([1,0]):
-        for j in range(2,len(lstn)):
-            if(lstn[i]< lstn[j]): 
-                sign *= -1               
-    return sign
-
-
-
-
 
 
 
