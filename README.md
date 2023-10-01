@@ -1,6 +1,6 @@
 # Exact Diagonalization 
 
-This library can be used to solve various problems in condensed matter physics using exact diagonalization method. This method consists of a series of different algorithms, which together can be a powerful tool to solve diverse problems in low energy physics. This library is in python. Most of the functions and classes defined are self-explanatory and is a good resource for the purpose of teaching as well.
+This library can be used to solve various problems in condensed matter physics using exact diagonalization method. This method consists of a series of different algorithms, which together can be a powerful tool to solve diverse problems in low energy physics. This library is in python. Most of the functions and classes defined are self-explanatory and is a good resource for the purpose of both teaching and conducting research.
 
 #
 
