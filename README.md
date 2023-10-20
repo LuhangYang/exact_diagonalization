@@ -8,7 +8,7 @@ This library can be used to solve various problems in condensed matter physics u
 
 
 
-  - **[Heisenberg 1/2 model](https://github.com/LuhangYang/exact_diagonalization/tree/main/ED_heis_RKKY)**
+  - **[Heisenberg spin-1/2 model](https://github.com/LuhangYang/exact_diagonalization/tree/main/ED_heis_RKKY)**
 
     1.  Both the original Heisenberg model and the one with RKKY-type of **long range interactions** are realized.
     2.  Both **real** and **momentum** space solutions can be obtained. The translational symmetry can be represented by the momentum, by using the good quantum number 'k'. We can get the spectrum as well as spectral weights for each momentum sector.
